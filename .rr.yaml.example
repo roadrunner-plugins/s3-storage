@@ -1,0 +1,90 @@
+# Example RoadRunner Configuration with S3 Plugin
+
+# Server configuration
+server:
+  command: "php worker.php"
+  relay: pipes
+
+# RPC configuration for plugin communication
+rpc:
+  listen: tcp://127.0.0.1:6001
+
+# S3 Plugin Configuration
+s3:
+  # Default bucket to use when bucket name is not specified
+  default: uploads
+
+  # Static bucket configurations loaded at startup
+  buckets:
+    # AWS S3 bucket for uploads
+    uploads:
+      region: us-east-1
+      endpoint: https://s3.amazonaws.com
+      bucket: my-app-uploads
+      prefix: "uploads/"
+      credentials:
+        key: ${AWS_ACCESS_KEY_ID}
+        secret: ${AWS_SECRET_ACCESS_KEY}
+      visibility: public
+      max_concurrent_operations: 100
+      part_size: 5242880  # 5MB
+      concurrency: 5
+
+    # Private documents bucket
+    documents:
+      region: us-east-1
+      bucket: my-app-private-docs
+      prefix: "documents/"
+      credentials:
+        key: ${AWS_ACCESS_KEY_ID}
+        secret: ${AWS_SECRET_ACCESS_KEY}
+      visibility: private
+      max_concurrent_operations: 50
+
+    # MinIO local development
+    minio-local:
+      region: us-east-1
+      endpoint: http://localhost:9000
+      bucket: dev-bucket
+      credentials:
+        key: minioadmin
+        secret: minioadmin
+      visibility: public
+
+    # DigitalOcean Spaces
+    do-spaces:
+      region: nyc3
+      endpoint: https://nyc3.digitaloceanspaces.com
+      bucket: my-spaces-bucket
+      credentials:
+        key: ${DO_SPACES_KEY}
+        secret: ${DO_SPACES_SECRET}
+      visibility: public
+
+    # Backblaze B2 (S3-compatible)
+    backblaze:
+      region: us-west-002
+      endpoint: https://s3.us-west-002.backblazeb2.com
+      bucket: my-b2-bucket
+      credentials:
+        key: ${B2_APPLICATION_KEY_ID}
+        secret: ${B2_APPLICATION_KEY}
+      visibility: private
+
+# Logging
+logs:
+  level: info
+  encoding: console
+  output: stdout
+  err_output: stderr
+
+# Optional: HTTP server for health checks
+http:
+  address: 127.0.0.1:8080
+  max_request_size: 256
+  middleware: []
+  pool:
+    num_workers: 4
+    max_jobs: 0
+    allocate_timeout: 60s
+    destroy_timeout: 60s
