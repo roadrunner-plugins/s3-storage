@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/roadrunner-server/api/v4/plugins/v1/jobs"
 	"github.com/roadrunner-server/endure/v2/dep"
 	"go.uber.org/zap"
 )
