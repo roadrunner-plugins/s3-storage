@@ -54,8 +54,9 @@ type Logger interface {
 
 // Init initializes the plugin with dependencies
 func (p *Plugin) Init(cfg Configurer, log Logger) error {
+	const op = errors.Op("s3_plugin_init")
 	if !cfg.Has(PluginName) {
-		return fmt.Errorf("no configuration section '%s' found", PluginName)
+		return errors.E(op, errors.Disabled)
 	}
 
 	p.cfg = cfg
