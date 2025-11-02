@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	stderr "errors"
 
 	"github.com/roadrunner-server/endure/v2/dep"
 	"github.com/roadrunner-server/errors"
