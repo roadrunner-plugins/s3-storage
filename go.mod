@@ -3,7 +3,7 @@ module github.com/roadrunner-plugins/s3-storage
 go 1.24
 
 require (
-	github.com/aws/aws-sdk-go-v2 release-2025-10-31
+	github.com/aws/aws-sdk-go-v2 v1.39.5
 	github.com/roadrunner-server/api/v4 v4.0.0
 	github.com/roadrunner-server/endure/v2 v2.4.0
 	github.com/roadrunner-server/goridge/v3 v3.8.0
