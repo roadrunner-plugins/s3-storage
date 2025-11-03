@@ -599,6 +599,121 @@ func (o *Operations) GetPublicURL(ctx context.Context, req *GetPublicURLRequest,
 	return nil
 }
 
+// ListObjects lists objects in a bucket with optional filtering and pagination
+func (o *Operations) ListObjects(ctx context.Context, req *ListObjectsRequest, resp *ListObjectsResponse) error {
+	o.plugin.TrackOperation()
+	defer o.plugin.CompleteOperation()
+
+	start := time.Now()
+
+	// Get bucket
+	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
+	if err != nil {
+		return NewBucketNotFoundError(req.Bucket)
+	}
+
+	bucket.Acquire()
+	defer bucket.Release()
+
+	// Set default max keys if not specified
+	maxKeys := req.MaxKeys
+	if maxKeys <= 0 {
+		maxKeys = 1000
+	}
+
+	// Prepare prefix - include bucket prefix if configured
+	prefix := bucket.GetFullPath(req.Prefix)
+
+	// Prepare list objects input
+	input := &s3.ListObjectsV2Input{
+		Bucket:  aws.String(bucket.Config.Bucket),
+		MaxKeys: aws.Int32(maxKeys),
+	}
+
+	// Add optional parameters
+	if prefix != "" {
+		input.Prefix = aws.String(prefix)
+	}
+
+	if req.Delimiter != "" {
+		input.Delimiter = aws.String(req.Delimiter)
+	}
+
+	if req.ContinuationToken != "" {
+		input.ContinuationToken = aws.String(req.ContinuationToken)
+	}
+
+	// List objects
+	result, err := bucket.Client.ListObjectsV2(ctx, input)
+	if err != nil {
+		o.log.Error("failed to list objects",
+			zap.String("bucket", req.Bucket),
+			zap.String("prefix", req.Prefix),
+			zap.Error(err),
+		)
+		return NewS3OperationError("list objects", err)
+	}
+
+	// Convert results to response format
+	resp.Objects = make([]ObjectInfo, 0, len(result.Contents))
+	for _, obj := range result.Contents {
+		// Remove bucket prefix from key if present
+		key := *obj.Key
+		if bucket.Config.Prefix != "" && strings.HasPrefix(key, bucket.Config.Prefix) {
+			key = strings.TrimPrefix(key, bucket.Config.Prefix)
+		}
+
+		objectInfo := ObjectInfo{
+			Key:          key,
+			Size:         *obj.Size,
+			LastModified: obj.LastModified.Unix(),
+		}
+
+		if obj.ETag != nil {
+			objectInfo.ETag = *obj.ETag
+		}
+
+		if obj.StorageClass != "" {
+			objectInfo.StorageClass = string(obj.StorageClass)
+		}
+
+		resp.Objects = append(resp.Objects, objectInfo)
+	}
+
+	// Process common prefixes (directories)
+	if len(result.CommonPrefixes) > 0 {
+		resp.CommonPrefixes = make([]CommonPrefix, 0, len(result.CommonPrefixes))
+		for _, cp := range result.CommonPrefixes {
+			prefix := *cp.Prefix
+			// Remove bucket prefix if present
+			if bucket.Config.Prefix != "" && strings.HasPrefix(prefix, bucket.Config.Prefix) {
+				prefix = strings.TrimPrefix(prefix, bucket.Config.Prefix)
+			}
+
+			resp.CommonPrefixes = append(resp.CommonPrefixes, CommonPrefix{
+				Prefix: prefix,
+			})
+		}
+	}
+
+	// Set pagination info
+	resp.IsTruncated = result.IsTruncated != nil && *result.IsTruncated
+	if result.NextContinuationToken != nil {
+		resp.NextContinuationToken = *result.NextContinuationToken
+	}
+	resp.KeyCount = *result.KeyCount
+
+	o.log.Debug("objects listed successfully",
+		zap.String("bucket", req.Bucket),
+		zap.String("prefix", req.Prefix),
+		zap.Int32("count", resp.KeyCount),
+		zap.Bool("truncated", resp.IsTruncated),
+		zap.Duration("duration", time.Since(start)),
+	)
+
+	return nil
+}
+
 // validatePathname validates a file pathname
 func (o *Operations) validatePathname(pathname string) error {
 	if pathname == "" {

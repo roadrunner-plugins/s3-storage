@@ -165,6 +165,38 @@ type GetPublicURLResponse struct {
 	ExpiresAt int64  `json:"expires_at,omitempty"` // Unix timestamp
 }
 
+// ListObjectsRequest represents a request to list objects in a bucket
+type ListObjectsRequest struct {
+	Bucket            string `json:"bucket"`
+	Prefix            string `json:"prefix,omitempty"`             // Filter by prefix
+	Delimiter         string `json:"delimiter,omitempty"`          // Delimiter for grouping (e.g., "/")
+	MaxKeys           int32  `json:"max_keys,omitempty"`           // Maximum number of keys to return (default: 1000)
+	ContinuationToken string `json:"continuation_token,omitempty"` // Token for pagination
+}
+
+// ObjectInfo represents information about a single S3 object
+type ObjectInfo struct {
+	Key          string `json:"key"`
+	Size         int64  `json:"size"`
+	LastModified int64  `json:"last_modified"` // Unix timestamp
+	ETag         string `json:"etag"`
+	StorageClass string `json:"storage_class,omitempty"`
+}
+
+// CommonPrefix represents a common prefix (directory-like structure)
+type CommonPrefix struct {
+	Prefix string `json:"prefix"`
+}
+
+// ListObjectsResponse represents the response from list objects operation
+type ListObjectsResponse struct {
+	Objects               []ObjectInfo   `json:"objects"`
+	CommonPrefixes        []CommonPrefix `json:"common_prefixes,omitempty"`
+	IsTruncated           bool           `json:"is_truncated"`
+	NextContinuationToken string         `json:"next_continuation_token,omitempty"`
+	KeyCount              int32          `json:"key_count"`
+}
+
 // RegisterBucket registers a new bucket dynamically via RPC
 func (r *rpc) RegisterBucket(req *RegisterBucketRequest, resp *RegisterBucketResponse) error {
 	r.log.Debug("registering bucket via RPC",
@@ -252,4 +284,9 @@ func (r *rpc) SetVisibility(req *SetVisibilityRequest, resp *SetVisibilityRespon
 // GetPublicURL generates a public or presigned URL for a file
 func (r *rpc) GetPublicURL(req *GetPublicURLRequest, resp *GetPublicURLResponse) error {
 	return r.plugin.operations.GetPublicURL(r.plugin.ctx, req, resp)
+}
+
+// ListObjects lists objects in a bucket with optional filtering
+func (r *rpc) ListObjects(req *ListObjectsRequest, resp *ListObjectsResponse) error {
+	return r.plugin.operations.ListObjects(r.plugin.ctx, req, resp)
 }
