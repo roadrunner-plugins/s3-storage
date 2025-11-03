@@ -83,7 +83,7 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 
 	// Register buckets from static configuration
 	for name, bucketCfg := range config.Buckets {
-		p.log.Info("registering bucket from config",
+		p.log.Debug("registering bucket from config",
 			zap.String("name", name),
 			zap.String("bucket", bucketCfg.Bucket),
 			zap.String("region", bucketCfg.Region),
@@ -123,14 +123,14 @@ func (p *Plugin) Serve() chan error {
 
 	// This plugin doesn't have background workers, but implements Service interface
 	// for proper lifecycle management
-	p.log.Info("S3 plugin serving")
+	p.log.Debug("S3 plugin serving")
 
 	return errCh
 }
 
 // Stop gracefully stops the plugin
 func (p *Plugin) Stop(ctx context.Context) error {
-	p.log.Info("stopping S3 plugin")
+	p.log.Debug("stopping S3 plugin")
 
 	// Cancel all ongoing operations
 	p.cancel()
@@ -144,7 +144,7 @@ func (p *Plugin) Stop(ctx context.Context) error {
 
 	select {
 	case <-done:
-		p.log.Info("all S3 operations completed")
+		p.log.Debug("all S3 operations completed")
 	case <-ctx.Done():
 		p.log.Warn("shutdown timeout reached, forcing stop")
 	}
@@ -155,7 +155,7 @@ func (p *Plugin) Stop(ctx context.Context) error {
 		return err
 	}
 
-	p.log.Info("S3 plugin stopped")
+	p.log.Debug("S3 plugin stopped")
 	return nil
 }
 

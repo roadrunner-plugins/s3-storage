@@ -124,7 +124,7 @@ func (o *Operations) Write(ctx context.Context, req *WriteRequest, resp *WriteRe
 	resp.Size = *headResult.ContentLength
 	resp.LastModified = headResult.LastModified.Unix()
 
-	o.log.Info("file uploaded successfully",
+	o.log.Debug("file uploaded successfully",
 		zap.String("bucket", req.Bucket),
 		zap.String("pathname", req.Pathname),
 		zap.Int64("size", resp.Size),
@@ -195,7 +195,7 @@ func (o *Operations) Read(ctx context.Context, req *ReadRequest, resp *ReadRespo
 	resp.MimeType = *result.ContentType
 	resp.LastModified = result.LastModified.Unix()
 
-	o.log.Info("file downloaded successfully",
+	o.log.Debug("file downloaded successfully",
 		zap.String("bucket", req.Bucket),
 		zap.String("pathname", req.Pathname),
 		zap.Int64("size", resp.Size),
@@ -291,7 +291,7 @@ func (o *Operations) Delete(ctx context.Context, req *DeleteRequest, resp *Delet
 
 	resp.Success = true
 
-	o.log.Info("file deleted successfully",
+	o.log.Debug("file deleted successfully",
 		zap.String("bucket", req.Bucket),
 		zap.String("pathname", req.Pathname),
 	)
@@ -378,7 +378,7 @@ func (o *Operations) Copy(ctx context.Context, req *CopyRequest, resp *CopyRespo
 	resp.Success = true
 	resp.Pathname = req.DestPathname
 
-	o.log.Info("file copied successfully",
+	o.log.Debug("file copied successfully",
 		zap.String("source_bucket", req.SourceBucket),
 		zap.String("source_pathname", req.SourcePathname),
 		zap.String("dest_bucket", req.DestBucket),
@@ -537,7 +537,7 @@ func (o *Operations) SetVisibility(ctx context.Context, req *SetVisibilityReques
 
 	resp.Success = true
 
-	o.log.Info("file visibility changed",
+	o.log.Debug("file visibility changed",
 		zap.String("bucket", req.Bucket),
 		zap.String("pathname", req.Pathname),
 		zap.String("visibility", req.Visibility),
@@ -620,7 +620,7 @@ func (o *Operations) validatePathname(pathname string) error {
 func (o *Operations) detectContentType(pathname string, content []byte) string {
 	// Simple content type detection based on file extension
 	ext := strings.ToLower(pathname[strings.LastIndex(pathname, ".")+1:])
-	
+
 	contentTypes := map[string]string{
 		"jpg":  "image/jpeg",
 		"jpeg": "image/jpeg",

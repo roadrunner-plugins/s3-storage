@@ -90,7 +90,7 @@ func (bm *BucketManager) RegisterBucket(ctx context.Context, name string, cfg *B
 	// Store bucket
 	bm.buckets[name] = bucket
 
-	bm.log.Info("bucket registered",
+	bm.log.Debug("bucket registered",
 		zap.String("name", name),
 		zap.String("bucket", cfg.Bucket),
 		zap.String("region", cfg.Region),
@@ -140,7 +140,7 @@ func (bm *BucketManager) SetDefault(name string) error {
 	}
 
 	bm.defaultBucket = name
-	bm.log.Info("default bucket set", zap.String("name", name))
+	bm.log.Debug("default bucket set", zap.String("name", name))
 	return nil
 }
 
@@ -178,7 +178,7 @@ func (bm *BucketManager) RemoveBucket(name string) error {
 	}
 
 	delete(bm.buckets, name)
-	bm.log.Info("bucket removed", zap.String("name", name))
+	bm.log.Debug("bucket removed", zap.String("name", name))
 	return nil
 }
 
@@ -194,7 +194,7 @@ func (bm *BucketManager) CloseAll() error {
 	}
 
 	bm.buckets = make(map[string]*Bucket)
-	bm.log.Info("all bucket clients closed")
+	bm.log.Debug("all bucket clients closed")
 	return nil
 }
 

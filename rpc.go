@@ -167,7 +167,7 @@ type GetPublicURLResponse struct {
 
 // RegisterBucket registers a new bucket dynamically via RPC
 func (r *rpc) RegisterBucket(req *RegisterBucketRequest, resp *RegisterBucketResponse) error {
-	r.log.Info("registering bucket via RPC",
+	r.log.Debug("registering bucket via RPC",
 		zap.String("name", req.Name),
 		zap.String("bucket", req.Bucket),
 		zap.String("region", req.Region),
