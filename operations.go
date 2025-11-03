@@ -568,9 +568,9 @@ func (o *Operations) GetPublicURL(ctx context.Context, req *GetPublicURLRequest,
 	// If no expiration, generate permanent public URL
 	if req.ExpiresIn == 0 {
 		// Generate public URL (assuming public-read ACL)
-		endpoint := bucket.Config.Endpoint
+		endpoint := bucket.ServerConfig.Endpoint
 		if endpoint == "" {
-			endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", bucket.Config.Region)
+			endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", bucket.ServerConfig.Region)
 		}
 		resp.URL = fmt.Sprintf("%s/%s/%s", endpoint, bucket.Config.Bucket, key)
 		return nil
