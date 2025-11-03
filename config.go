@@ -9,18 +9,43 @@ type Config struct {
 	// Default bucket name to use when none specified
 	Default string `mapstructure:"default"`
 
-	// Buckets contains pre-configured bucket definitions
+	// Servers contains S3 server definitions (credentials and endpoints)
+	Servers map[string]*ServerConfig `mapstructure:"servers"`
+
+	// Buckets contains bucket definitions that reference servers
 	Buckets map[string]*BucketConfig `mapstructure:"buckets"`
+}
+
+// ServerConfig represents S3 server configuration (credentials and endpoint)
+type ServerConfig struct {
+	// Region is the AWS region (e.g., "us-east-1", "fra1" for DigitalOcean)
+	Region string `mapstructure:"region"`
+
+	// Endpoint is the S3 endpoint URL (required for S3-compatible services)
+	// Example: "https://fra1.digitaloceanspaces.com"
+	// Leave empty for AWS S3 (will use default AWS endpoint)
+	Endpoint string `mapstructure:"endpoint"`
+
+	// Credentials contains authentication credentials for this server
+	Credentials ServerCredentials `mapstructure:"credentials"`
+}
+
+// ServerCredentials contains S3 authentication credentials
+type ServerCredentials struct {
+	// Key is the Access Key ID
+	Key string `mapstructure:"key"`
+
+	// Secret is the Secret Access Key
+	Secret string `mapstructure:"secret"`
+
+	// Token is the Session Token (optional, for temporary credentials)
+	Token string `mapstructure:"token"`
 }
 
 // BucketConfig represents a single bucket configuration
 type BucketConfig struct {
-	// Region is the AWS region (e.g., "us-east-1")
-	Region string `mapstructure:"region"`
-
-	// Endpoint is the S3 endpoint URL (for custom S3-compatible services)
-	// Leave empty for AWS S3 (will use default AWS endpoint)
-	Endpoint string `mapstructure:"endpoint"`
+	// Server is the reference to a server defined in the servers section
+	Server string `mapstructure:"server"`
 
 	// Bucket is the actual S3 bucket name
 	Bucket string `mapstructure:"bucket"`
@@ -28,9 +53,6 @@ type BucketConfig struct {
 	// Prefix is the path prefix for all operations (optional)
 	// Example: "uploads/" - all files will be stored under this prefix
 	Prefix string `mapstructure:"prefix"`
-
-	// Credentials contains AWS credentials
-	Credentials BucketCredentials `mapstructure:"credentials"`
 
 	// Visibility defines default ACL: "public" or "private"
 	Visibility string `mapstructure:"visibility"`
@@ -45,27 +67,26 @@ type BucketConfig struct {
 	Concurrency int `mapstructure:"concurrency"`
 }
 
-// BucketCredentials contains AWS authentication credentials
-type BucketCredentials struct {
-	// Key is the AWS Access Key ID
-	Key string `mapstructure:"key"`
-
-	// Secret is the AWS Secret Access Key
-	Secret string `mapstructure:"secret"`
-
-	// Token is the AWS Session Token (optional, for temporary credentials)
-	Token string `mapstructure:"token"`
-}
-
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	if len(c.Servers) == 0 {
+		return fmt.Errorf("at least one server must be configured")
+	}
+
 	if len(c.Buckets) == 0 {
 		return fmt.Errorf("at least one bucket must be configured")
 	}
 
+	// Validate each server configuration
+	for name, server := range c.Servers {
+		if err := server.Validate(); err != nil {
+			return fmt.Errorf("invalid configuration for server '%s': %w", name, err)
+		}
+	}
+
 	// Validate each bucket configuration
 	for name, bucket := range c.Buckets {
-		if err := bucket.Validate(); err != nil {
+		if err := bucket.Validate(c.Servers); err != nil {
 			return fmt.Errorf("invalid configuration for bucket '%s': %w", name, err)
 		}
 	}
@@ -80,22 +101,36 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// Validate validates a single bucket configuration
-func (bc *BucketConfig) Validate() error {
-	if bc.Region == "" {
+// Validate validates a server configuration
+func (sc *ServerConfig) Validate() error {
+	if sc.Region == "" {
 		return fmt.Errorf("region is required")
+	}
+
+	if sc.Credentials.Key == "" {
+		return fmt.Errorf("credentials.key is required")
+	}
+
+	if sc.Credentials.Secret == "" {
+		return fmt.Errorf("credentials.secret is required")
+	}
+
+	return nil
+}
+
+// Validate validates a bucket configuration
+func (bc *BucketConfig) Validate(servers map[string]*ServerConfig) error {
+	if bc.Server == "" {
+		return fmt.Errorf("server reference is required")
+	}
+
+	// Validate server reference exists
+	if _, exists := servers[bc.Server]; !exists {
+		return fmt.Errorf("referenced server '%s' not found in configuration", bc.Server)
 	}
 
 	if bc.Bucket == "" {
 		return fmt.Errorf("bucket name is required")
-	}
-
-	if bc.Credentials.Key == "" {
-		return fmt.Errorf("credentials.key is required")
-	}
-
-	if bc.Credentials.Secret == "" {
-		return fmt.Errorf("credentials.secret is required")
 	}
 
 	if bc.Visibility != "" && bc.Visibility != "public" && bc.Visibility != "private" {
@@ -136,4 +171,13 @@ func (bc *BucketConfig) GetFullPath(pathname string) string {
 		return pathname
 	}
 	return bc.Prefix + pathname
+}
+
+// GetServerConfig returns the server configuration for this bucket
+func (bc *BucketConfig) GetServerConfig(servers map[string]*ServerConfig) (*ServerConfig, error) {
+	server, exists := servers[bc.Server]
+	if !exists {
+		return nil, fmt.Errorf("server '%s' not found", bc.Server)
+	}
+	return server, nil
 }

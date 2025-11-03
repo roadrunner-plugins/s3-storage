@@ -10,15 +10,13 @@ type rpc struct {
 	log    *zap.Logger
 }
 
-// RegisterBucketRequest represents the request to register a new bucket
+// RegisterBucketRequest represents the request to register a new bucket dynamically
 type RegisterBucketRequest struct {
-	Name        string            `json:"name"`
-	Region      string            `json:"region"`
-	Endpoint    string            `json:"endpoint"`
-	Bucket      string            `json:"bucket"`
-	Prefix      string            `json:"prefix"`
-	Credentials BucketCredentials `json:"credentials"`
-	Visibility  string            `json:"visibility"`
+	Name       string `json:"name"`
+	Server     string `json:"server"`
+	Bucket     string `json:"bucket"`
+	Prefix     string `json:"prefix"`
+	Visibility string `json:"visibility"`
 }
 
 // RegisterBucketResponse represents the response from bucket registration
@@ -198,32 +196,39 @@ type ListObjectsResponse struct {
 }
 
 // RegisterBucket registers a new bucket dynamically via RPC
+// Note: The bucket must reference an existing server from configuration
 func (r *rpc) RegisterBucket(req *RegisterBucketRequest, resp *RegisterBucketResponse) error {
 	r.log.Debug("registering bucket via RPC",
 		zap.String("name", req.Name),
+		zap.String("server", req.Server),
 		zap.String("bucket", req.Bucket),
-		zap.String("region", req.Region),
 	)
 
 	// Create bucket configuration from request
 	cfg := &BucketConfig{
-		Region:      req.Region,
-		Endpoint:    req.Endpoint,
-		Bucket:      req.Bucket,
-		Prefix:      req.Prefix,
-		Credentials: req.Credentials,
-		Visibility:  req.Visibility,
+		Server:     req.Server,
+		Bucket:     req.Bucket,
+		Prefix:     req.Prefix,
+		Visibility: req.Visibility,
 	}
 
-	// Validate configuration
-	if err := cfg.Validate(); err != nil {
+	// Get bucket manager to access server configs
+	bucketManager := r.plugin.GetBucketManager()
+
+	// Lock for reading servers map
+	bucketManager.mu.RLock()
+	servers := bucketManager.servers
+	bucketManager.mu.RUnlock()
+
+	// Validate configuration (this will check if server exists)
+	if err := cfg.Validate(servers); err != nil {
 		resp.Success = false
 		resp.Message = "Invalid configuration: " + err.Error()
 		return NewInvalidConfigError(err.Error())
 	}
 
 	// Register bucket
-	if err := r.plugin.buckets.RegisterBucket(r.plugin.ctx, req.Name, cfg); err != nil {
+	if err := bucketManager.RegisterBucket(r.plugin.ctx, req.Name, cfg); err != nil {
 		resp.Success = false
 		resp.Message = "Failed to register bucket: " + err.Error()
 		return err

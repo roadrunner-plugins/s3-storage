@@ -81,12 +81,15 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Set server configurations in bucket manager
+	p.buckets.SetServers(config.Servers)
+
 	// Register buckets from static configuration
 	for name, bucketCfg := range config.Buckets {
 		p.log.Debug("registering bucket from config",
 			zap.String("name", name),
 			zap.String("bucket", bucketCfg.Bucket),
-			zap.String("region", bucketCfg.Region),
+			zap.String("server", bucketCfg.Server),
 		)
 
 		if err := p.buckets.RegisterBucket(p.ctx, name, bucketCfg); err != nil {
@@ -110,6 +113,7 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 	}
 
 	p.log.Info("S3 plugin initialized",
+		zap.Int("servers", len(config.Servers)),
 		zap.Int("buckets", len(config.Buckets)),
 		zap.String("default", config.Default),
 	)

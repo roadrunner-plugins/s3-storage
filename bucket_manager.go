@@ -17,6 +17,9 @@ type BucketManager struct {
 	// Map of bucket name to bucket instance
 	buckets map[string]*Bucket
 
+	// Map of server configurations
+	servers map[string]*ServerConfig
+
 	// Default bucket name
 	defaultBucket string
 
@@ -35,6 +38,9 @@ type Bucket struct {
 	// Config is the bucket configuration
 	Config *BucketConfig
 
+	// ServerConfig is the server configuration this bucket uses
+	ServerConfig *ServerConfig
+
 	// Client is the AWS S3 client
 	Client *s3.Client
 
@@ -46,12 +52,20 @@ type Bucket struct {
 func NewBucketManager(log *zap.Logger) *BucketManager {
 	return &BucketManager{
 		buckets: make(map[string]*Bucket),
+		servers: make(map[string]*ServerConfig),
 		log:     log,
 	}
 }
 
+// SetServers sets the server configurations
+func (bm *BucketManager) SetServers(servers map[string]*ServerConfig) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	bm.servers = servers
+}
+
 // RegisterBucket registers a new bucket with S3 client initialization
-func (bm *BucketManager) RegisterBucket(ctx context.Context, name string, cfg *BucketConfig) error {
+func (bm *BucketManager) RegisterBucket(ctx context.Context, name string, bucketCfg *BucketConfig) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
@@ -60,31 +74,38 @@ func (bm *BucketManager) RegisterBucket(ctx context.Context, name string, cfg *B
 		return fmt.Errorf("bucket '%s' already registered", name)
 	}
 
-	// Validate configuration
-	if err := cfg.Validate(); err != nil {
+	// Get server configuration
+	serverCfg, exists := bm.servers[bucketCfg.Server]
+	if !exists {
+		return fmt.Errorf("server '%s' not found for bucket '%s'", bucketCfg.Server, name)
+	}
+
+	// Validate bucket configuration with server context
+	if err := bucketCfg.Validate(bm.servers); err != nil {
 		return fmt.Errorf("invalid bucket configuration: %w", err)
 	}
 
 	// Create AWS configuration
-	awsCfg, err := bm.createAWSConfig(ctx, cfg)
+	awsCfg, err := bm.createAWSConfig(ctx, serverCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create AWS config: %w", err)
 	}
 
 	// Create S3 client
 	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		if cfg.Endpoint != "" {
-			o.BaseEndpoint = aws.String(cfg.Endpoint)
+		if serverCfg.Endpoint != "" {
+			o.BaseEndpoint = aws.String(serverCfg.Endpoint)
 			o.UsePathStyle = true // Required for MinIO and some S3-compatible services
 		}
 	})
 
 	// Create bucket instance
 	bucket := &Bucket{
-		Name:   name,
-		Config: cfg,
-		Client: s3Client,
-		sem:    make(chan struct{}, cfg.MaxConcurrentOperations),
+		Name:         name,
+		Config:       bucketCfg,
+		ServerConfig: serverCfg,
+		Client:       s3Client,
+		sem:          make(chan struct{}, bucketCfg.MaxConcurrentOperations),
 	}
 
 	// Store bucket
@@ -92,9 +113,10 @@ func (bm *BucketManager) RegisterBucket(ctx context.Context, name string, cfg *B
 
 	bm.log.Debug("bucket registered",
 		zap.String("name", name),
-		zap.String("bucket", cfg.Bucket),
-		zap.String("region", cfg.Region),
-		zap.String("endpoint", cfg.Endpoint),
+		zap.String("bucket", bucketCfg.Bucket),
+		zap.String("server", bucketCfg.Server),
+		zap.String("region", serverCfg.Region),
+		zap.String("endpoint", serverCfg.Endpoint),
 	)
 
 	return nil
@@ -198,18 +220,18 @@ func (bm *BucketManager) CloseAll() error {
 	return nil
 }
 
-// createAWSConfig creates AWS configuration from bucket config
-func (bm *BucketManager) createAWSConfig(ctx context.Context, cfg *BucketConfig) (aws.Config, error) {
+// createAWSConfig creates AWS configuration from server config
+func (bm *BucketManager) createAWSConfig(ctx context.Context, serverCfg *ServerConfig) (aws.Config, error) {
 	// Create credentials provider
 	credsProvider := credentials.NewStaticCredentialsProvider(
-		cfg.Credentials.Key,
-		cfg.Credentials.Secret,
-		cfg.Credentials.Token,
+		serverCfg.Credentials.Key,
+		serverCfg.Credentials.Secret,
+		serverCfg.Credentials.Token,
 	)
 
 	// Load AWS config with custom credentials
 	awsCfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(cfg.Region),
+		config.WithRegion(serverCfg.Region),
 		config.WithCredentialsProvider(credsProvider),
 	)
 	if err != nil {
