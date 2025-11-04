@@ -68,8 +68,12 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 	p.log = log.NamedLogger(PluginName)
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 
-	// Initialize metrics exporter
-	p.metrics = newMetricsExporter()
+	// Initialize metrics exporter with explicit Prometheus registration
+	metrics, err := newMetricsExporter()
+	if err != nil {
+		return fmt.Errorf("failed to initialize metrics: %w", err)
+	}
+	p.metrics = metrics
 
 	// Initialize bucket manager
 	p.buckets = NewBucketManager(p.log)
@@ -225,6 +229,7 @@ func (p *Plugin) CompleteOperation() {
 
 // MetricsCollector implements the StatProvider interface for Prometheus metrics integration
 // This method is called by the metrics plugin during its Serve phase to register all collectors
+// Metrics are also registered directly in Init() to ensure availability even if this method isn't called
 func (p *Plugin) MetricsCollector() []prometheus.Collector {
 	if p.metrics == nil {
 		return nil

@@ -14,8 +14,9 @@ type metricsExporter struct {
 }
 
 // newMetricsExporter creates a new metrics exporter for S3 operations
-func newMetricsExporter() *metricsExporter {
-	return &metricsExporter{
+// Returns error if metrics registration fails
+func newMetricsExporter() (*metricsExporter, error) {
+	m := &metricsExporter{
 		// Operation counter with labels: operation, bucket, status
 		operationsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -34,6 +35,24 @@ func newMetricsExporter() *metricsExporter {
 			[]string{"bucket", "error_type"},
 		),
 	}
+
+	// Register metrics with Prometheus default registry
+	// This ensures metrics are available even if MetricsCollector() isn't called
+	if err := prometheus.Register(m.operationsTotal); err != nil {
+		// Check if already registered (happens on plugin reload)
+		if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+			return nil, err
+		}
+	}
+
+	if err := prometheus.Register(m.errorsTotal); err != nil {
+		// Check if already registered (happens on plugin reload)
+		if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+			return nil, err
+		}
+	}
+
+	return m, nil
 }
 
 // RecordOperation increments the operation counter
