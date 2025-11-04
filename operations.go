@@ -40,12 +40,16 @@ func (o *Operations) Write(ctx context.Context, req *WriteRequest, resp *WriteRe
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "write", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "write", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -97,6 +101,8 @@ func (o *Operations) Write(ctx context.Context, req *WriteRequest, resp *WriteRe
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "write", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("upload", err)
 	}
 
@@ -116,6 +122,7 @@ func (o *Operations) Write(ctx context.Context, req *WriteRequest, resp *WriteRe
 		resp.Pathname = req.Pathname
 		resp.Size = int64(len(req.Content))
 		resp.LastModified = time.Now().Unix()
+		o.plugin.metrics.RecordOperation(req.Bucket, "write", "success")
 		return nil
 	}
 
@@ -123,6 +130,8 @@ func (o *Operations) Write(ctx context.Context, req *WriteRequest, resp *WriteRe
 	resp.Pathname = req.Pathname
 	resp.Size = *headResult.ContentLength
 	resp.LastModified = headResult.LastModified.Unix()
+
+	o.plugin.metrics.RecordOperation(req.Bucket, "write", "success")
 
 	o.log.Debug("file uploaded successfully",
 		zap.String("bucket", req.Bucket),
@@ -145,12 +154,16 @@ func (o *Operations) Read(ctx context.Context, req *ReadRequest, resp *ReadRespo
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "read", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "read", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -168,6 +181,8 @@ func (o *Operations) Read(ctx context.Context, req *ReadRequest, resp *ReadRespo
 	if err != nil {
 		var nsk *types.NoSuchKey
 		if errors.As(err, &nsk) {
+			o.plugin.metrics.RecordOperation(req.Bucket, "read", "error")
+			o.plugin.metrics.RecordError(req.Bucket, ErrFileNotFound)
 			return NewFileNotFoundError(req.Pathname)
 		}
 		o.log.Error("failed to download file",
@@ -175,6 +190,8 @@ func (o *Operations) Read(ctx context.Context, req *ReadRequest, resp *ReadRespo
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "read", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("download", err)
 	}
 	defer result.Body.Close()
@@ -187,6 +204,8 @@ func (o *Operations) Read(ctx context.Context, req *ReadRequest, resp *ReadRespo
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "read", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("read content", err)
 	}
 
@@ -194,6 +213,8 @@ func (o *Operations) Read(ctx context.Context, req *ReadRequest, resp *ReadRespo
 	resp.Size = *result.ContentLength
 	resp.MimeType = *result.ContentType
 	resp.LastModified = result.LastModified.Unix()
+
+	o.plugin.metrics.RecordOperation(req.Bucket, "read", "success")
 
 	o.log.Debug("file downloaded successfully",
 		zap.String("bucket", req.Bucket),
@@ -212,12 +233,16 @@ func (o *Operations) Exists(ctx context.Context, req *ExistsRequest, resp *Exist
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "exists", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "exists", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -238,6 +263,7 @@ func (o *Operations) Exists(ctx context.Context, req *ExistsRequest, resp *Exist
 		var nf *types.NotFound
 		if errors.As(err, &nsk) || errors.As(err, &nf) {
 			resp.Exists = false
+			o.plugin.metrics.RecordOperation(req.Bucket, "exists", "success")
 			return nil
 		}
 		// Other errors should be returned
@@ -246,10 +272,13 @@ func (o *Operations) Exists(ctx context.Context, req *ExistsRequest, resp *Exist
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "exists", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("head object", err)
 	}
 
 	resp.Exists = true
+	o.plugin.metrics.RecordOperation(req.Bucket, "exists", "success")
 	return nil
 }
 
@@ -260,12 +289,16 @@ func (o *Operations) Delete(ctx context.Context, req *DeleteRequest, resp *Delet
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "delete", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "delete", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -286,10 +319,13 @@ func (o *Operations) Delete(ctx context.Context, req *DeleteRequest, resp *Delet
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "delete", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("delete", err)
 	}
 
 	resp.Success = true
+	o.plugin.metrics.RecordOperation(req.Bucket, "delete", "success")
 
 	o.log.Debug("file deleted successfully",
 		zap.String("bucket", req.Bucket),
@@ -308,21 +344,29 @@ func (o *Operations) Copy(ctx context.Context, req *CopyRequest, resp *CopyRespo
 
 	// Validate request
 	if err := o.validatePathname(req.SourcePathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.SourceBucket, "copy", "error")
+		o.plugin.metrics.RecordError(req.SourceBucket, ErrInvalidPathname)
 		return err
 	}
 	if err := o.validatePathname(req.DestPathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.DestBucket, "copy", "error")
+		o.plugin.metrics.RecordError(req.DestBucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get source bucket
 	sourceBucket, err := o.plugin.buckets.GetBucket(req.SourceBucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.SourceBucket, "copy", "error")
+		o.plugin.metrics.RecordError(req.SourceBucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.SourceBucket)
 	}
 
 	// Get destination bucket
 	destBucket, err := o.plugin.buckets.GetBucket(req.DestBucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.DestBucket, "copy", "error")
+		o.plugin.metrics.RecordError(req.DestBucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.DestBucket)
 	}
 
@@ -362,6 +406,8 @@ func (o *Operations) Copy(ctx context.Context, req *CopyRequest, resp *CopyRespo
 			zap.String("dest_pathname", req.DestPathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.DestBucket, "copy", "error")
+		o.plugin.metrics.RecordError(req.DestBucket, ErrS3Operation)
 		return NewS3OperationError("copy", err)
 	}
 
@@ -377,6 +423,8 @@ func (o *Operations) Copy(ctx context.Context, req *CopyRequest, resp *CopyRespo
 
 	resp.Success = true
 	resp.Pathname = req.DestPathname
+
+	o.plugin.metrics.RecordOperation(req.DestBucket, "copy", "success")
 
 	o.log.Debug("file copied successfully",
 		zap.String("source_bucket", req.SourceBucket),
@@ -438,12 +486,16 @@ func (o *Operations) GetMetadata(ctx context.Context, req *GetMetadataRequest, r
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_metadata", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_metadata", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -462,6 +514,8 @@ func (o *Operations) GetMetadata(ctx context.Context, req *GetMetadataRequest, r
 		var nsk *types.NoSuchKey
 		var nf *types.NotFound
 		if errors.As(err, &nsk) || errors.As(err, &nf) {
+			o.plugin.metrics.RecordOperation(req.Bucket, "get_metadata", "error")
+			o.plugin.metrics.RecordError(req.Bucket, ErrFileNotFound)
 			return NewFileNotFoundError(req.Pathname)
 		}
 		o.log.Error("failed to get file metadata",
@@ -469,6 +523,8 @@ func (o *Operations) GetMetadata(ctx context.Context, req *GetMetadataRequest, r
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_metadata", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("head object", err)
 	}
 
@@ -484,6 +540,8 @@ func (o *Operations) GetMetadata(ctx context.Context, req *GetMetadataRequest, r
 	// Determine visibility from ACL (if available)
 	resp.Visibility = "private" // Default
 
+	o.plugin.metrics.RecordOperation(req.Bucket, "get_metadata", "success")
+
 	return nil
 }
 
@@ -494,16 +552,22 @@ func (o *Operations) SetVisibility(ctx context.Context, req *SetVisibilityReques
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "set_visibility", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	if req.Visibility != "public" && req.Visibility != "private" {
+		o.plugin.metrics.RecordOperation(req.Bucket, "set_visibility", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidVisibility)
 		return NewS3Error(ErrInvalidVisibility, "visibility must be 'public' or 'private'", req.Visibility)
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "set_visibility", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -532,10 +596,14 @@ func (o *Operations) SetVisibility(ctx context.Context, req *SetVisibilityReques
 			zap.String("visibility", req.Visibility),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "set_visibility", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("put object acl", err)
 	}
 
 	resp.Success = true
+
+	o.plugin.metrics.RecordOperation(req.Bucket, "set_visibility", "success")
 
 	o.log.Debug("file visibility changed",
 		zap.String("bucket", req.Bucket),
@@ -553,12 +621,16 @@ func (o *Operations) GetPublicURL(ctx context.Context, req *GetPublicURLRequest,
 
 	// Validate request
 	if err := o.validatePathname(req.Pathname); err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_url", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrInvalidPathname)
 		return err
 	}
 
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_url", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -573,6 +645,7 @@ func (o *Operations) GetPublicURL(ctx context.Context, req *GetPublicURLRequest,
 			endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", bucket.ServerConfig.Region)
 		}
 		resp.URL = fmt.Sprintf("%s/%s/%s", endpoint, bucket.Config.Bucket, key)
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_url", "success")
 		return nil
 	}
 
@@ -590,11 +663,15 @@ func (o *Operations) GetPublicURL(ctx context.Context, req *GetPublicURLRequest,
 			zap.String("pathname", req.Pathname),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "get_url", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("presign get object", err)
 	}
 
 	resp.URL = presignResult.URL
 	resp.ExpiresAt = time.Now().Add(time.Duration(req.ExpiresIn) * time.Second).Unix()
+
+	o.plugin.metrics.RecordOperation(req.Bucket, "get_url", "success")
 
 	return nil
 }
@@ -609,6 +686,8 @@ func (o *Operations) ListObjects(ctx context.Context, req *ListObjectsRequest, r
 	// Get bucket
 	bucket, err := o.plugin.buckets.GetBucket(req.Bucket)
 	if err != nil {
+		o.plugin.metrics.RecordOperation(req.Bucket, "list", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrBucketNotFound)
 		return NewBucketNotFoundError(req.Bucket)
 	}
 
@@ -651,6 +730,8 @@ func (o *Operations) ListObjects(ctx context.Context, req *ListObjectsRequest, r
 			zap.String("prefix", req.Prefix),
 			zap.Error(err),
 		)
+		o.plugin.metrics.RecordOperation(req.Bucket, "list", "error")
+		o.plugin.metrics.RecordError(req.Bucket, ErrS3Operation)
 		return NewS3OperationError("list objects", err)
 	}
 
@@ -702,6 +783,8 @@ func (o *Operations) ListObjects(ctx context.Context, req *ListObjectsRequest, r
 		resp.NextContinuationToken = *result.NextContinuationToken
 	}
 	resp.KeyCount = *result.KeyCount
+
+	o.plugin.metrics.RecordOperation(req.Bucket, "list", "success")
 
 	o.log.Debug("objects listed successfully",
 		zap.String("bucket", req.Bucket),

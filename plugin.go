@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/roadrunner-server/endure/v2/dep"
 	"github.com/roadrunner-server/errors"
 	"go.uber.org/zap"
@@ -28,6 +29,9 @@ type Plugin struct {
 
 	// Operations handler for S3 operations
 	operations *Operations
+
+	// Metrics exporter for Prometheus integration
+	metrics *metricsExporter
 
 	// Context for graceful shutdown
 	ctx    context.Context
@@ -63,6 +67,9 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 	p.cfg = cfg
 	p.log = log.NamedLogger(PluginName)
 	p.ctx, p.cancel = context.WithCancel(context.Background())
+
+	// Initialize metrics exporter
+	p.metrics = newMetricsExporter()
 
 	// Initialize bucket manager
 	p.buckets = NewBucketManager(p.log)
@@ -214,4 +221,13 @@ func (p *Plugin) TrackOperation() {
 // CompleteOperation marks an operation as complete
 func (p *Plugin) CompleteOperation() {
 	p.wg.Done()
+}
+
+// MetricsCollector implements the StatProvider interface for Prometheus metrics integration
+// This method is called by the metrics plugin during its Serve phase to register all collectors
+func (p *Plugin) MetricsCollector() []prometheus.Collector {
+	if p.metrics == nil {
+		return nil
+	}
+	return p.metrics.getCollectors()
 }
