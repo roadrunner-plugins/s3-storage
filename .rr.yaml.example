@@ -14,62 +14,102 @@ s3:
   # Default bucket to use when bucket name is not specified
   default: uploads
 
-  # Static bucket configurations loaded at startup
-  buckets:
-    # AWS S3 bucket for uploads
-    uploads:
+  # Server definitions: credentials and endpoints that can be shared between buckets
+  servers:
+    # AWS S3 server configuration
+    aws-us-east:
       region: us-east-1
-      endpoint: https://s3.amazonaws.com
-      bucket: my-app-uploads
-      prefix: "uploads/"
+      endpoint: ""  # Leave empty for AWS S3 (uses default AWS endpoint)
       credentials:
         key: ${AWS_ACCESS_KEY_ID}
         secret: ${AWS_SECRET_ACCESS_KEY}
-      visibility: public
-      max_concurrent_operations: 100
-      part_size: 5242880  # 5MB
-      concurrency: 5
+        token: ${AWS_SESSION_TOKEN}  # Optional, for temporary credentials
 
-    # Private documents bucket
-    documents:
-      region: us-east-1
-      bucket: my-app-private-docs
-      prefix: "documents/"
+    # AWS S3 different region
+    aws-eu-west:
+      region: eu-west-1
+      endpoint: ""
       credentials:
-        key: ${AWS_ACCESS_KEY_ID}
-        secret: ${AWS_SECRET_ACCESS_KEY}
-      visibility: private
-      max_concurrent_operations: 50
+        key: ${AWS_EU_ACCESS_KEY_ID}
+        secret: ${AWS_EU_SECRET_ACCESS_KEY}
 
-    # MinIO local development
+    # MinIO server
     minio-local:
-      region: us-east-1
+      region: us-east-1  # MinIO requires a region value
       endpoint: http://localhost:9000
-      bucket: dev-bucket
       credentials:
         key: minioadmin
         secret: minioadmin
-      visibility: public
 
     # DigitalOcean Spaces
-    do-spaces:
+    do-spaces-nyc:
       region: nyc3
       endpoint: https://nyc3.digitaloceanspaces.com
-      bucket: my-spaces-bucket
       credentials:
         key: ${DO_SPACES_KEY}
         secret: ${DO_SPACES_SECRET}
-      visibility: public
 
     # Backblaze B2 (S3-compatible)
-    backblaze:
+    backblaze-us:
       region: us-west-002
       endpoint: https://s3.us-west-002.backblazeb2.com
-      bucket: my-b2-bucket
       credentials:
         key: ${B2_APPLICATION_KEY_ID}
         secret: ${B2_APPLICATION_KEY}
+
+  # Bucket definitions: reference servers and define bucket-specific settings
+  buckets:
+    # Public uploads bucket on AWS S3
+    uploads:
+      server: aws-us-east              # References server from servers section
+      bucket: my-app-uploads           # Actual S3 bucket name
+      prefix: "uploads/"               # Optional: path prefix for all operations
+      visibility: public               # Default ACL: "public" or "private"
+      max_concurrent_operations: 100   # Limit concurrent operations per bucket
+      part_size: 5242880              # 5MB - multipart upload chunk size
+      concurrency: 5                   # Goroutines for multipart uploads
+
+    # Private documents bucket (same AWS account, different bucket)
+    documents:
+      server: aws-us-east
+      bucket: my-app-private-docs
+      prefix: "documents/"
       visibility: private
+      max_concurrent_operations: 50
+
+    # User avatars in EU region
+    avatars:
+      server: aws-eu-west
+      bucket: user-avatars-eu
+      prefix: "avatars/"
+      visibility: public
+      max_concurrent_operations: 200
+
+    # Development bucket on local MinIO
+    dev-storage:
+      server: minio-local
+      bucket: dev-bucket
+      prefix: ""                       # No prefix
+      visibility: public
+      max_concurrent_operations: 50
+
+    # DigitalOcean Spaces bucket
+    cdn-assets:
+      server: do-spaces-nyc
+      bucket: cdn-assets-bucket
+      prefix: "static/"
+      visibility: public
+      max_concurrent_operations: 100
+
+    # Backblaze B2 for backups
+    backups:
+      server: backblaze-us
+      bucket: application-backups
+      prefix: "daily/"
+      visibility: private
+      max_concurrent_operations: 20
+      part_size: 104857600            # 100MB - larger chunks for big backup files
+      concurrency: 10
 
 # Logging
 logs:

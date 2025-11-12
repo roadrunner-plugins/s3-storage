@@ -21,6 +21,18 @@ go get github.com/roadrunner-server/s3-plugin
 
 ## Configuration
 
+### Configuration Structure
+
+The S3 plugin uses a two-level configuration structure:
+
+1. **Servers**: Define S3 server credentials and endpoints (can be reused by multiple buckets)
+2. **Buckets**: Define individual buckets that reference servers
+
+This separation allows you to:
+- Share credentials across multiple buckets
+- Easily manage different S3 providers (AWS, MinIO, DigitalOcean Spaces, etc.)
+- Keep sensitive credentials in one place
+
 ### Basic Configuration (.rr.yaml)
 
 ```yaml
@@ -28,45 +40,122 @@ s3:
   # Default bucket to use when none specified
   default: uploads
 
-  # Pre-configured buckets at startup
-  buckets:
-    uploads:
+  # Server definitions (credentials and endpoints)
+  servers:
+    # AWS S3 server
+    aws-primary:
       region: us-east-1
-      endpoint: https://s3.amazonaws.com  # Optional, for custom S3-compatible services
-      bucket: my-uploads-bucket
-      prefix: "uploads/"  # Optional path prefix
+      endpoint: ""  # Empty for AWS S3 (uses default endpoint)
       credentials:
         key: ${AWS_ACCESS_KEY_ID}
         secret: ${AWS_SECRET_ACCESS_KEY}
         token: ${AWS_SESSION_TOKEN}  # Optional for temporary credentials
-      visibility: public  # or "private"
-      max_concurrent_operations: 100  # Optional, default: 100
-      part_size: 5242880  # Optional, default: 5MB (for multipart uploads)
-      concurrency: 5  # Optional, default: 5 (goroutines for multipart)
 
-    private-docs:
-      region: eu-west-1
-      bucket: company-documents
-      credentials:
-        key: ${AWS_ACCESS_KEY_ID}
-        secret: ${AWS_SECRET_ACCESS_KEY}
-      visibility: private
-```
-
-### MinIO Configuration Example
-
-```yaml
-s3:
-  default: minio-storage
-  buckets:
-    minio-storage:
-      region: us-east-1  # MinIO requires a region value
+    # MinIO server
+    minio-dev:
+      region: us-east-1
       endpoint: http://localhost:9000
-      bucket: my-bucket
       credentials:
         key: minioadmin
         secret: minioadmin
+
+  # Bucket definitions (reference servers)
+  buckets:
+    # Public uploads bucket
+    uploads:
+      server: aws-primary           # References server from servers section
+      bucket: my-uploads-bucket     # Actual S3 bucket name
+      prefix: "uploads/"            # Optional path prefix
+      visibility: public            # "public" or "private"
+      max_concurrent_operations: 100  # Optional, default: 100
+      part_size: 5242880           # Optional, default: 5MB (multipart uploads)
+      concurrency: 5                # Optional, default: 5 (goroutines)
+
+    # Private documents bucket (same AWS account)
+    documents:
+      server: aws-primary           # Reuses same credentials
+      bucket: company-documents
+      prefix: "docs/"
+      visibility: private
+      max_concurrent_operations: 50
+
+    # Development bucket on MinIO
+    dev-storage:
+      server: minio-dev
+      bucket: dev-bucket
       visibility: public
+```
+
+### Multi-Provider Configuration Example
+
+```yaml
+s3:
+  default: uploads
+
+  servers:
+    # AWS S3 US East
+    aws-us:
+      region: us-east-1
+      endpoint: ""
+      credentials:
+        key: ${AWS_ACCESS_KEY_ID}
+        secret: ${AWS_SECRET_ACCESS_KEY}
+
+    # AWS S3 EU West
+    aws-eu:
+      region: eu-west-1
+      endpoint: ""
+      credentials:
+        key: ${AWS_EU_ACCESS_KEY_ID}
+        secret: ${AWS_EU_SECRET_ACCESS_KEY}
+
+    # DigitalOcean Spaces
+    do-spaces:
+      region: nyc3
+      endpoint: https://nyc3.digitaloceanspaces.com
+      credentials:
+        key: ${DO_SPACES_KEY}
+        secret: ${DO_SPACES_SECRET}
+
+    # Backblaze B2
+    backblaze:
+      region: us-west-002
+      endpoint: https://s3.us-west-002.backblazeb2.com
+      credentials:
+        key: ${B2_APPLICATION_KEY_ID}
+        secret: ${B2_APPLICATION_KEY}
+
+  buckets:
+    # User uploads in US
+    uploads:
+      server: aws-us
+      bucket: app-uploads-us
+      prefix: "uploads/"
+      visibility: public
+
+    # User avatars in EU (GDPR compliance)
+    avatars-eu:
+      server: aws-eu
+      bucket: app-avatars-eu
+      prefix: "avatars/"
+      visibility: public
+
+    # CDN assets on DigitalOcean
+    cdn-assets:
+      server: do-spaces
+      bucket: cdn-bucket
+      prefix: "static/"
+      visibility: public
+      max_concurrent_operations: 200
+
+    # Long-term backups on Backblaze B2
+    backups:
+      server: backblaze
+      bucket: app-backups
+      prefix: "daily/"
+      visibility: private
+      part_size: 104857600  # 100MB chunks for large files
+      concurrency: 10
 ```
 
 ## PHP Usage
@@ -162,26 +251,25 @@ $response = $rpc->call('s3.SetVisibility', [
 
 ### Dynamic Bucket Registration
 
+You can register new buckets at runtime via RPC. **Note**: The bucket must reference an existing server from your configuration.
+
 ```php
-// Register a new bucket at runtime
+// Register a new bucket at runtime (references existing server)
 $response = $rpc->call('s3.RegisterBucket', [
-    'name' => 'dynamic-bucket',
-    'region' => 'us-west-2',
-    'endpoint' => 'https://s3.amazonaws.com',
-    'bucket' => 'my-new-bucket',
-    'prefix' => 'files/',
-    'credentials' => [
-        'key' => 'AKIAIOSFODNN7EXAMPLE',
-        'secret' => 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
-    ],
-    'visibility' => 'public'
+    'name' => 'dynamic-bucket',      // Unique bucket identifier
+    'server' => 'aws-primary',       // Must reference existing server from config
+    'bucket' => 'my-new-bucket',     // Actual S3 bucket name
+    'prefix' => 'files/',            // Optional path prefix
+    'visibility' => 'public'          // "public" or "private"
 ]);
 // Returns: ['success' => true, 'message' => 'Bucket registered successfully']
 
 // List all registered buckets
 $response = $rpc->call('s3.ListBuckets', []);
-// Returns: ['buckets' => ['uploads', 'private-docs', 'dynamic-bucket'], 'default' => 'uploads']
+// Returns: ['buckets' => ['uploads', 'documents', 'dynamic-bucket'], 'default' => 'uploads']
 ```
+
+**Important**: Dynamic bucket registration requires that the referenced server already exists in your `.rr.yaml` configuration. You cannot add new servers at runtime - only new buckets that use existing server credentials.
 
 ## Architecture
 
