@@ -2,6 +2,10 @@ name: s3-storage
 description: 'S3-compatible object storage operations via RPC interface'
 category: network
 owner: butschster
+dependencies:
+  - rpc
+  - metrics
+  - logger
 author:
   name: Pavel Buchnev
   email: butschster@gmail.com
